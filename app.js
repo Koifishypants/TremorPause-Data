@@ -250,8 +250,8 @@ function handleManifest(dv) {
   // STREAMING: the manifest arrives at the START of capture and data packets
   // stream in live during the recording window. We stay on the capture screen
   // (the countdown is already running) — there is no separate transfer bar.
-  // The watchdog is still armed only as a safety net for a lost DONE frame.
-  armXferWatchdog();
+  // The watchdog is armed later, when the countdown ends and DONE is expected,
+  // so it can't false-fire on a normal mid-capture gap.
 }
 
 function handleDataPacket(dv) {
@@ -290,7 +290,7 @@ function requestResend(min, max) {
   if (min < 0) { min = 0; max = cap.totalPkts - 1; }   // CRC-only failure: redo all
   const count = max - min + 1;
   cap.resends++;
-  $('xfer-sub').textContent = 'recovering ' + count + ' packet(s) · try ' + cap.resends + '/' + MAX_RESENDS;
+  setXferSub('recovering ' + count + ' packet(s) · try ' + cap.resends + '/' + MAX_RESENDS);
   writeControl([CMD_RESEND, min & 0xFF, (min >> 8) & 0xFF, count & 0xFF, (count >> 8) & 0xFF])
     .then(armXferWatchdog)     // expect the re-sent packets + a fresh DONE
     .catch(err => { toast('Resend failed: ' + err.message); failSegment(count); });
@@ -313,17 +313,24 @@ function onXferStall() {
     if (!cap.got[s]) { missing++; if (min < 0) min = s; max = s; }
   }
   if (missing === 0) { min = max = cap.totalPkts - 1; }   // all data here; coax a fresh DONE
-  $('xfer-sub').textContent = 'link stalled — recovering ' + cap.received + '/' + cap.totalPkts;
+  setXferSub('link stalled — recovering ' + cap.received + '/' + cap.totalPkts);
   requestResend(min, max);
 }
 
 /* ----------------------------- TRANSFER UI -------------------------------- */
-function resetTransferUI() { $('xfer-bar').style.width = '0%'; $('xfer-pct').textContent = '0%'; }
+/* These elements live on the (now unused) transfer screen. In streaming mode
+   that screen is never shown, so guard every write — a missing element must
+   never throw and freeze the capture handler. */
+function setXferSub(txt) { const e = $('xfer-sub'); if (e) e.textContent = txt; }
+function resetTransferUI() {
+  const b = $('xfer-bar'); if (b) b.style.width = '0%';
+  const p = $('xfer-pct'); if (p) p.textContent = '0%';
+}
 function updateTransferUI() {
   if (!cap || !cap.totalPkts) return;
   const pct = Math.round(100 * cap.received / cap.totalPkts);
-  $('xfer-bar').style.width = pct + '%';
-  $('xfer-pct').textContent = pct + '%';
+  const b = $('xfer-bar'); if (b) b.style.width = pct + '%';
+  const p = $('xfer-pct'); if (p) p.textContent = pct + '%';
 }
 
 /* --------------------------- SEGMENT FLOW --------------------------------- */
@@ -373,7 +380,14 @@ function startCountdown(durMs) {
   countdownTimer = setInterval(() => {
     remaining--;
     $('cap-countdown').textContent = remaining > 0 ? remaining : 0;
-    if (remaining <= 0) { $('cap-countdown').textContent = '✓'; stopCountdown(); }
+    if (remaining <= 0) {
+      $('cap-countdown').textContent = '✓';
+      stopCountdown();
+      // Capture window is over; the board is sending its final packets + DONE.
+      // Arm the watchdog now (with grace) so a lost DONE self-heals, while never
+      // false-firing during the live capture itself.
+      armXferWatchdog();
+    }
   }, 1000);
 }
 function stopCountdown() { if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; } }
