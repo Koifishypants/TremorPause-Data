@@ -52,7 +52,7 @@ const ST_IDLE = 0, ST_CAPTURING = 1, ST_TRANSFER = 2, ST_DONE = 3,
 const PAYLOAD_BYTES = 16;     // raw bytes per FRM_DATA packet (must match firmware)
 const BYTES_PER_SAMPLE = 12;  // 6 axes * int16
 const MAX_RESENDS = 8;        // recovery attempts before a task is marked failed
-const XFER_IDLE_MS = 1800;    // no packet for this long during transfer => link stalled
+const XFER_IDLE_MS = 1000;    // no packet for this long during transfer => link stalled
 
 /* code -> human values (must match firmware register mapping) */
 const ODR_HZ          = { 0:100, 1:200, 2:400, 3:800, 4:1600 };
@@ -75,16 +75,10 @@ const SEGMENTS = [
   { key:'postural', label:'Postural hold', dur:10000,
     howto:'Hold the arm straight out in front, level with the shoulder, hand steady. Hold it there.',
     why:'Postural tremor — appears when holding against gravity.' },
-  { key:'wing', label:'Wing / load hold', dur:10000,
-    howto:'Raise both elbows out to the sides, fingertips nearly touching in front of the chest (a "wing" pose). Hold.',
-    why:'A second postural load that provokes some tremor types.' },
-  { key:'finger_nose', label:'Finger-to-nose', dur:15000,
-    howto:'Slowly touch your nose with your fingertip, then reach out and touch the operator’s fingertip. Repeat back and forth at a steady pace.',
-    why:'Intention / kinetic tremor that grows near a target.' },
-  { key:'functional', label:'Spoon-to-mouth', dur:15000,
+  { key:'functional', label:'Spoon-to-mouth', dur:10000,
     howto:'Pretend to eat: bring an empty spoon (or just the hand) from the table up to the mouth and back down. Repeat smoothly.',
     why:'A real functional task — tremor that affects daily life.' },
-  { key:'free', label:'Free movement', dur:15000,
+  { key:'free', label:'Free movement', dur:10000,
     howto:'Move the hand naturally — wave, reach around, pick things up, gesture. Keep moving the whole time, no specific pattern.',
     why:'Mixed voluntary motion — teaches the model to separate movement from tremor.' }
 ];
@@ -255,6 +249,8 @@ function handleManifest(dv) {
   resetTransferUI();
   showScreen('screen-transfer');
   $('xfer-sub').textContent = n.toLocaleString() + ' samples · receiving';
+  if ($('xfer-hold')) $('xfer-hold').textContent =
+    'Recording done — rest your hand still for a few seconds while it saves.';
   armXferWatchdog();
 }
 
