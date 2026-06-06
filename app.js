@@ -52,7 +52,8 @@ const ST_IDLE = 0, ST_CAPTURING = 1, ST_TRANSFER = 2, ST_DONE = 3,
 const PAYLOAD_BYTES = 16;     // raw bytes per FRM_DATA packet (must match firmware)
 const BYTES_PER_SAMPLE = 12;  // 6 axes * int16
 const MAX_RESENDS = 8;        // recovery attempts before a task is marked failed
-const XFER_IDLE_MS = 1000;    // no packet for this long during transfer => link stalled
+const XFER_IDLE_MS = 2500;    // streaming: packets arrive throughout capture; this
+                              // only fires if the stream truly stalls or DONE is lost
 
 /* code -> human values (must match firmware register mapping) */
 const ODR_HZ          = { 0:100, 1:200, 2:400, 3:800, 4:1600 };
@@ -246,11 +247,10 @@ function handleManifest(dv) {
     got: new Uint8Array(totalPkts),
     received: 0, expectedCrc: 0, resends: 0
   };
-  resetTransferUI();
-  showScreen('screen-transfer');
-  $('xfer-sub').textContent = n.toLocaleString() + ' samples · receiving';
-  if ($('xfer-hold')) $('xfer-hold').textContent =
-    'Recording done — rest your hand still for a few seconds while it saves.';
+  // STREAMING: the manifest arrives at the START of capture and data packets
+  // stream in live during the recording window. We stay on the capture screen
+  // (the countdown is already running) — there is no separate transfer bar.
+  // The watchdog is still armed only as a safety net for a lost DONE frame.
   armXferWatchdog();
 }
 
@@ -402,10 +402,16 @@ function skipSegment() {
 function finishSegment() {
   clearXferWatchdog();
   const s = SEGMENTS[currentIndex];
+  // In streaming mode the manifest's n/captureMs are PLANNED values. Report the
+  // actual count from bytes received so undersampling shows up honestly rather
+  // than always reading back the nominal rate.
+  const actualSamples = Math.floor((cap.received * PAYLOAD_BYTES) / BYTES_PER_SAMPLE);
+  const nSamples = Math.min(actualSamples || cap.n, cap.n);
+  const planMs = cap.captureMs;   // planned/measured capture window (ms)
   results[currentIndex] = {
     key: s.key, label: s.label, index: currentIndex,
-    n: cap.n, captureMs: cap.captureMs,
-    fsEff: cap.captureMs > 0 ? (cap.n / (cap.captureMs / 1000)) : 0,
+    n: nSamples, captureMs: planMs,
+    fsEff: planMs > 0 ? (nSamples / (planMs / 1000)) : 0,
     odr: cap.odr, acc: cap.acc, gyr: cap.gyr,
     buf: cap.buf, crc: cap.expectedCrc, status: 'ok'
   };
