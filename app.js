@@ -583,6 +583,83 @@ async function uploadAll() {
   }
 }
 
+/* --------------------------- LOCAL CSV EXPORT ----------------------------- */
+/* Decodes each task's raw int16-LE buffer into scaled physical units (accel in
+   g, gyro in dps) and writes ONE combined CSV for the participant, with a `task`
+   column plus participant metadata. This is a guaranteed local copy — it works
+   even if the cloud upload is unavailable. Browsers cannot target an absolute
+   path, so the file lands in your browser's download folder; point that at
+   your TremorPauseRaw folder (or move the file there) once. */
+function buildParticipantCSV() {
+  const ok = results.filter(r => r && r.status === 'ok');
+  if (!ok.length) return null;
+  const meta = gatherMeta();
+
+  const header = [
+    'participant_code','session_id','task','task_index','sample_index',
+    'ax_g','ay_g','az_g','gx_dps','gy_dps','gz_dps',
+    'odr_nominal_hz','fs_effective_hz',
+    'age_band','sex','hand_tested','is_dominant','diagnosed_tremor','tremor_type'
+  ];
+  const lines = [header.join(',')];
+
+  // CSV-safe: wrap any value containing a comma/quote, escape quotes.
+  const esc = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+
+  for (const r of ok) {
+    const accLsb = ACC_LSB_PER_G[r.acc];
+    const gyrLsb = GYR_LSB_PER_DPS[r.gyr];
+    const dv = new DataView(r.buf.buffer, r.buf.byteOffset, r.buf.byteLength);
+    const nSamp = Math.floor(r.buf.byteLength / BYTES_PER_SAMPLE);
+    const odrHz = ODR_HZ[r.odr];
+    const fsEff = Math.round(r.fsEff * 100) / 100;
+
+    for (let i = 0; i < nSamp; i++) {
+      const o = i * BYTES_PER_SAMPLE;
+      const ax = dv.getInt16(o,      true) / accLsb;
+      const ay = dv.getInt16(o + 2,  true) / accLsb;
+      const az = dv.getInt16(o + 4,  true) / accLsb;
+      const gx = dv.getInt16(o + 6,  true) / gyrLsb;
+      const gy = dv.getInt16(o + 8,  true) / gyrLsb;
+      const gz = dv.getInt16(o + 10, true) / gyrLsb;
+      lines.push([
+        esc(participantCode), esc(sessionId), esc(r.key), r.index, i,
+        ax.toFixed(6), ay.toFixed(6), az.toFixed(6),
+        gx.toFixed(4), gy.toFixed(4), gz.toFixed(4),
+        odrHz, fsEff,
+        esc(meta.age_band), esc(meta.sex), esc(meta.hand_tested),
+        esc(meta.is_dominant), esc(meta.diagnosed_tremor), esc(meta.tremor_type)
+      ].join(','));
+    }
+  }
+  return lines.join('\n');
+}
+
+function downloadCSV() {
+  const csv = buildParticipantCSV();
+  if (!csv) { toast('Nothing to download yet'); return; }
+  try {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'TremorPause_TP-' + participantCode.slice(0, 8) + '_' +
+                 new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast('CSV downloaded ✓');
+  } catch (e) {
+    toast('Download failed: ' + e.message);
+  }
+}
+
+
 /* --------------------------- SESSION LIFECYCLE ---------------------------- */
 function newParticipant() {
   results = []; currentIndex = 0; singleMode = false; cap = null; pending = null;
@@ -632,6 +709,11 @@ function wire() {
   $('fb-appid').value = FIREBASE_CONFIG.appId;
   initFirebase(FIREBASE_CONFIG);
 
+  // Default the capture rate to 100 Hz (ODR code 0). 100 Hz streams reliably
+  // over Web Bluetooth and is 8x the top tremor frequency — the study standard.
+  const odrSel = $('set-odr');
+  if (odrSel) { odrSel.value = '0'; }
+
   participantCode = genId();
   $('participant-code').textContent = 'TP-' + participantCode.slice(0, 8);
 
@@ -641,6 +723,19 @@ function wire() {
   $('btn-skip-seg').addEventListener('click', skipSegment);
   $('btn-abort').addEventListener('click', abortCapture);
   $('btn-upload').addEventListener('click', uploadAll);
+  // Add a local CSV download button next to Upload (created here so it works
+  // regardless of the page markup). Saves a combined per-participant CSV.
+  (function addDownloadBtn() {
+    if ($('btn-download')) { $('btn-download').addEventListener('click', downloadCSV); return; }
+    const up = $('btn-upload');
+    if (!up || !up.parentNode) return;
+    const b = document.createElement('button');
+    b.id = 'btn-download';
+    b.className = up.className;          // match the existing button styling
+    b.textContent = 'Download CSV to Computer';
+    b.addEventListener('click', downloadCSV);
+    up.parentNode.insertBefore(b, up.nextSibling);
+  })();
   $('btn-new').addEventListener('click', newParticipant);
   $('btn-redo').addEventListener('click', () => toast('Tap any task above to record it again.'));
   $('consent-check').addEventListener('change', () => refreshUploadEnabled());
