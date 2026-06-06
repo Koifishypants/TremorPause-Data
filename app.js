@@ -51,7 +51,8 @@ const ST_IDLE = 0, ST_CAPTURING = 1, ST_TRANSFER = 2, ST_DONE = 3,
 
 const PAYLOAD_BYTES = 16;     // raw bytes per FRM_DATA packet (must match firmware)
 const BYTES_PER_SAMPLE = 12;  // 6 axes * int16
-const MAX_RESENDS = 3;
+const MAX_RESENDS = 8;        // recovery attempts before a task is marked failed
+const XFER_IDLE_MS = 1800;    // no packet for this long during transfer => link stalled
 
 /* code -> human values (must match firmware register mapping) */
 const ODR_HZ          = { 0:100, 1:200, 2:400, 3:800, 4:1600 };
@@ -119,6 +120,7 @@ let singleMode = false;          // redo a single task from the review screen
 let results = [];                // per-segment captured data + status
 let pending = null;              // params we asked the board to use this capture
 let cap = null;                  // active reassembly buffer
+let xferTimer = null;            // transfer-stall watchdog
 let countdownTimer = null;
 let uploading = false;
 
@@ -197,6 +199,7 @@ function onDisconnected() {
   connected = false; controlChar = null; dataChar = null;
   setConn('off', 'Disconnected');
   if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  clearXferWatchdog();
   toast('Sensor disconnected');
   refreshBeginEnabled();
 }
@@ -225,12 +228,12 @@ function handleState(st) {
       toast('On-board buffer full — capture truncated. Lower the rate for full-length tasks.');
       break;
     case ST_ABORTED:
-      stopCountdown();
+      stopCountdown(); clearXferWatchdog();
       toast('Recording cancelled');
       afterSegmentExit(false);
       break;
     case ST_ERROR:
-      stopCountdown();
+      stopCountdown(); clearXferWatchdog();
       toast('Sensor error — try the task again.');
       afterSegmentExit(false);
       break;
@@ -252,6 +255,7 @@ function handleManifest(dv) {
   resetTransferUI();
   showScreen('screen-transfer');
   $('xfer-sub').textContent = n.toLocaleString() + ' samples · receiving';
+  armXferWatchdog();
 }
 
 function handleDataPacket(dv) {
@@ -265,6 +269,7 @@ function handleDataPacket(dv) {
     cap.buf[off + i] = dv.getUint8(3 + i);
   cap.got[seq] = 1; cap.received++;
   updateTransferUI();
+  armXferWatchdog();            // packets still flowing -> keep waiting
 }
 
 function handleDone(dv) {
@@ -278,7 +283,7 @@ function handleDone(dv) {
 
   if (missing === 0) {
     const got = crc32(cap.buf);
-    if (got === cap.expectedCrc) { finishSegment(); return; }
+    if (got === cap.expectedCrc) { clearXferWatchdog(); finishSegment(); return; }
     // all packets present but CRC mismatch -> a payload was corrupted; resend all
   }
   if (cap.resends >= MAX_RESENDS) { failSegment(missing); return; }
@@ -291,7 +296,29 @@ function requestResend(min, max) {
   cap.resends++;
   $('xfer-sub').textContent = 'recovering ' + count + ' packet(s) · try ' + cap.resends + '/' + MAX_RESENDS;
   writeControl([CMD_RESEND, min & 0xFF, (min >> 8) & 0xFF, count & 0xFF, (count >> 8) & 0xFF])
+    .then(armXferWatchdog)     // expect the re-sent packets + a fresh DONE
     .catch(err => { toast('Resend failed: ' + err.message); failSegment(count); });
+}
+
+/* ------------------------- TRANSFER WATCHDOG ------------------------------ */
+/* The board can drop the tail of the notification stream (incl. the DONE frame)
+   if the BLE link briefly can't keep up. Without this, the app would sit at
+   e.g. 70% forever. On a stall we proactively re-request what's missing — and if
+   everything actually arrived but DONE was lost, we nudge the last packet to make
+   the board re-emit DONE so we can verify the CRC. */
+function clearXferWatchdog() { if (xferTimer) { clearTimeout(xferTimer); xferTimer = null; } }
+function armXferWatchdog() { clearXferWatchdog(); xferTimer = setTimeout(onXferStall, XFER_IDLE_MS); }
+function onXferStall() {
+  xferTimer = null;
+  if (!cap) return;
+  if (cap.resends >= MAX_RESENDS) { failSegment(cap.totalPkts - cap.received); return; }
+  let missing = 0, min = -1, max = -1;
+  for (let s = 0; s < cap.totalPkts; s++) {
+    if (!cap.got[s]) { missing++; if (min < 0) min = s; max = s; }
+  }
+  if (missing === 0) { min = max = cap.totalPkts - 1; }   // all data here; coax a fresh DONE
+  $('xfer-sub').textContent = 'link stalled — recovering ' + cap.received + '/' + cap.totalPkts;
+  requestResend(min, max);
 }
 
 /* ----------------------------- TRANSFER UI -------------------------------- */
@@ -331,6 +358,7 @@ async function startCapture() {
   const durMs = SEGMENTS[currentIndex].dur;
   pending = { odr, acc, gyr, durMs };
   cap = null;
+  clearXferWatchdog();
   const d = Math.min(65535, durMs);
   try {
     await writeControl([CMD_START, odr, acc, gyr, d & 0xFF, (d >> 8) & 0xFF]);
@@ -355,6 +383,7 @@ function startCountdown(durMs) {
 function stopCountdown() { if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; } }
 
 async function abortCapture() {
+  clearXferWatchdog();
   try { await writeControl([CMD_ABORT]); } catch (e) {}
   stopCountdown();
   // ST_ABORTED will route us out; also handle here in case it's missed
@@ -375,6 +404,7 @@ function skipSegment() {
 }
 
 function finishSegment() {
+  clearXferWatchdog();
   const s = SEGMENTS[currentIndex];
   results[currentIndex] = {
     key: s.key, label: s.label, index: currentIndex,
@@ -389,6 +419,7 @@ function finishSegment() {
   afterSegmentExit(true);
 }
 function failSegment(missing) {
+  clearXferWatchdog();
   const s = SEGMENTS[currentIndex];
   results[currentIndex] = {
     key: s.key, label: s.label, index: currentIndex, status: 'failed', missing: missing || 0
