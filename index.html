@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#00c2ff" />
+<link rel="manifest" href="manifest.json" />
+<title>TremorPause Collect</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg:#080b10; --surface:#0f1318; --panel:#141920;
+  --border:#1e2630; --border2:#252f3a; --text:#e8edf2;
+  --muted:#4a5568; --accent:#00c2ff; --green:#34c759;
+  --orange:#ff9500; --red:#ff3b30; --purple:#bf00ff;
+  --mono:'DM Mono',monospace; --disp:'Syne',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(0,194,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(0,194,255,.02) 1px,transparent 1px);
+  background-size:40px 40px;}
+.app{position:relative;z-index:1;max-width:680px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px;}
+
+/* HEADER */
+.header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--surface);border:1px solid var(--border);border-radius:14px;}
+.logo{font-family:var(--disp);font-size:20px;font-weight:800;} .logo span{color:var(--accent);}
+.mode-tag{font-size:10px;color:var(--muted);font-family:var(--disp);font-weight:700;letter-spacing:2px;text-transform:uppercase;}
+#conn-pill{font-size:11px;color:var(--red);transition:color .3s;display:flex;align-items:center;gap:6px;}
+#conn-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:background .3s;}
+
+/* PARTICIPANT — large friendly UI */
+.p-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px;display:flex;flex-direction:column;gap:20px;}
+.p-step-num{font-family:var(--disp);font-size:13px;font-weight:700;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin-bottom:6px;}
+.p-step-title{font-family:var(--disp);font-size:22px;font-weight:800;color:var(--text);line-height:1.2;margin-bottom:10px;}
+.p-step-body{font-size:16px;color:#a0aec0;line-height:1.8;}
+.p-big-btn{width:100%;padding:18px;border:none;border-radius:14px;font-family:var(--disp);font-size:16px;font-weight:800;letter-spacing:1px;cursor:pointer;transition:opacity .2s,transform .1s;}
+.p-big-btn:active{transform:scale(.98);opacity:.9;}
+.p-big-btn:disabled{opacity:.35;cursor:not-allowed;}
+.p-btn-blue{background:var(--accent);color:#000;}
+.p-btn-green{background:var(--green);color:#000;}
+.p-btn-purple{background:var(--purple);color:#fff;}
+.p-btn-red{background:var(--red);color:#fff;}
+.p-btn-grey{background:var(--panel);color:var(--muted);border:1.5px solid var(--border2);}
+.p-divider{height:1px;background:var(--border);margin:4px 0;}
+.p-countdown{font-family:var(--disp);font-size:64px;font-weight:800;color:var(--accent);text-align:center;padding:6px 0;line-height:1;}
+.p-countdown.small{font-size:34px;color:var(--text);}
+.p-sub{text-align:center;font-size:12px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-family:var(--disp);font-weight:700;}
+.p-progress-row{display:flex;gap:8px;justify-content:center;margin:4px 0;flex-wrap:wrap;}
+.p-dot{width:14px;height:14px;border-radius:50%;background:var(--border2);border:1px solid var(--border2);transition:background .3s,border .3s;}
+.p-dot.active{background:var(--accent);border-color:var(--accent);}
+.p-dot.done{background:var(--green);border-color:var(--green);}
+.p-instruction-box{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;font-size:16px;color:var(--text);line-height:1.8;}
+.p-instruction-box .big{font-family:var(--disp);font-size:18px;font-weight:800;color:var(--accent);margin-bottom:6px;display:block;}
+.p-consent-box{background:#0a1020;border:2px solid #1a3060;border-radius:14px;padding:20px;}
+.p-consent-label{font-size:15px;color:#8aaad0;line-height:1.7;display:flex;gap:14px;align-items:flex-start;cursor:pointer;}
+.p-consent-label input[type="checkbox"]{width:22px;height:22px;flex-shrink:0;margin-top:2px;cursor:pointer;accent-color:var(--accent);}
+
+/* progress bar (transfer) */
+.bar-track{height:14px;background:var(--border2);border-radius:7px;overflow:hidden;}
+.bar-fill{height:100%;width:0%;background:var(--accent);border-radius:7px;transition:width .15s linear;}
+
+/* META FORM */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.form-grid .full{grid-column:1 / -1;}
+.field-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-family:var(--disp);font-weight:700;}
+select,input[type="text"],textarea{width:100%;padding:12px 12px;background:var(--panel);color:var(--text);border:1.5px solid var(--border2);border-radius:10px;font-family:var(--mono);font-size:14px;}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5568' fill='none' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:30px;cursor:pointer;}
+textarea{resize:vertical;min-height:60px;font-size:12px;}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--accent);}
+.code-chip{font-family:var(--mono);font-size:12px;color:var(--accent);background:#00c2ff14;border:1px solid #00c2ff33;border-radius:8px;padding:8px 12px;word-break:break-all;}
+
+/* REVIEW LIST */
+.seg-list{display:flex;flex-direction:column;gap:8px;}
+.seg-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
+.seg-ico{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;font-family:var(--disp);}
+.seg-ico.ok{background:#34c75922;color:var(--green);border:1.5px solid #34c75955;}
+.seg-ico.bad{background:#ff3b3022;color:var(--red);border:1.5px solid #ff3b3055;}
+.seg-ico.skip{background:#14191f;color:var(--muted);border:1.5px solid var(--border2);}
+.seg-name{font-family:var(--disp);font-weight:700;font-size:13px;color:var(--text);}
+.seg-detail{font-size:11px;color:var(--muted);margin-top:2px;}
+.seg-stat{font-family:var(--mono);font-size:11px;color:var(--accent);text-align:right;}
+
+/* SECTION / SETTINGS */
+.section-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;}
+.section-title{font-family:var(--disp);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.settings-toggle{background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;text-align:left;padding:0;letter-spacing:.5px;}
+.settings-toggle:hover{color:var(--text);}
+.settings-body{display:none;margin-top:8px;}
+.set-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;margin-bottom:14px;}
+.set-label{font-size:11px;color:var(--muted);line-height:1.5;}
+.set-label strong{color:var(--text);display:block;margin-bottom:2px;font-family:var(--disp);font-size:12px;}
+.set-row select{width:150px;}
+.set-note{font-size:10px;color:var(--muted);line-height:1.6;margin-top:4px;}
+.fb-grid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:6px;}
+.fb-grid label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.fb-grid input{font-size:11px;}
+
+.hint{font-size:11px;color:var(--muted);line-height:1.7;}
+.hint b{color:var(--text);}
+.warn{color:var(--orange);}
+
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--border2);color:var(--text);padding:10px 20px;border-radius:10px;font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;max-width:90%;text-align:center;}
+.footer{text-align:center;font-size:10px;color:var(--muted);padding:6px 0 16px;line-height:1.8;}
+.hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div>
+      <div class="logo">Tremor<span>Pause</span></div>
+      <div class="mode-tag">Data Collection</div>
+    </div>
+    <div id="conn-pill"><span class="dot"></span><span id="conn-text">Not connected</span></div>
+  </div>
+
+  <!-- ============ SCREEN 1: SETUP ============ -->
+  <div id="screen-setup" class="p-card">
+    <div>
+      <div class="p-step-num">Step 1 · Setup</div>
+      <div class="p-step-title">Connect the sensor</div>
+      <div class="p-step-body">
+        Power on the TremorPause band, then connect over Bluetooth. The band is worn on the
+        hand being tested. You can run the whole session from this one screen.
+      </div>
+    </div>
+    <button id="btn-connect" class="p-big-btn p-btn-blue">Connect Sensor</button>
+
+    <div class="p-divider"></div>
+
+    <div>
+      <div class="p-step-num">Step 2 · Participant</div>
+      <div class="p-step-title" style="font-size:18px;">A few quick details</div>
+      <div class="p-step-body" style="font-size:14px;margin-bottom:4px;">
+        No names. A random code identifies this participant.
+      </div>
+    </div>
+
+    <div class="field-label" style="margin-bottom:0;">Participant code (auto)</div>
+    <div id="participant-code" class="code-chip">—</div>
+
+    <div class="form-grid">
+      <div>
+        <div class="field-label">Age band</div>
+        <select id="m-age">
+          <option value="">Select…</option>
+          <option value="under_8">Under 8</option>
+          <option value="8_12">8–12</option>
+          <option value="13_17">13–17</option>
+          <option value="18_29">18–29</option>
+          <option value="30_44">30–44</option>
+          <option value="45_59">45–59</option>
+          <option value="60_74">60–74</option>
+          <option value="75_plus">75+</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label">Sex (optional)</div>
+        <select id="m-sex">
+          <option value="">Prefer not to say</option>
+          <option value="female">Female</option>
+          <option value="male">Male</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label">Hand tested</div>
+        <select id="m-hand">
+          <option value="right">Right</option>
+          <option value="left">Left</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label">Is it dominant?</div>
+        <select id="m-dominant">
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+          <option value="unknown">Unsure</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label">Diagnosed tremor?</div>
+        <select id="m-diag">
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+          <option value="unknown">Unknown</option>
+        </select>
+      </div>
+      <div>
+        <div class="field-label">Tremor type (if known)</div>
+        <select id="m-type">
+          <option value="">N/A</option>
+          <option value="essential">Essential</option>
+          <option value="parkinsonian">Parkinsonian</option>
+          <option value="dystonic">Dystonic</option>
+          <option value="physiologic">Enhanced physiologic</option>
+          <option value="other">Other</option>
+          <option value="unknown">Unknown</option>
+        </select>
+      </div>
+      <div class="full">
+        <div class="field-label">Notes (optional)</div>
+        <textarea id="m-notes" placeholder="Medication, time since last dose, anything relevant…"></textarea>
+      </div>
+    </div>
+
+    <button id="btn-begin" class="p-big-btn p-btn-green" disabled>Begin Session →</button>
+    <div class="hint">Connect the sensor and choose an age band to begin.</div>
+  </div>
+
+  <!-- ============ SCREEN 2: SEGMENT INSTRUCTION ============ -->
+  <div id="screen-segment" class="p-card hidden">
+    <div class="p-progress-row" id="seg-dots"></div>
+    <div>
+      <div class="p-step-num" id="seg-counter">Task 1 of 6</div>
+      <div class="p-step-title" id="seg-title">—</div>
+    </div>
+    <div class="p-instruction-box">
+      <span class="big" id="seg-howto-title">What to do</span>
+      <span id="seg-howto">—</span>
+    </div>
+    <div class="p-step-body" id="seg-why" style="font-size:13px;"></div>
+    <button id="btn-start-seg" class="p-big-btn p-btn-blue">Start Recording</button>
+    <button id="btn-skip-seg" class="p-big-btn p-btn-grey">Skip this task</button>
+  </div>
+
+  <!-- ============ SCREEN 3: CAPTURING ============ -->
+  <div id="screen-capture" class="p-card hidden">
+    <div>
+      <div class="p-step-num" id="cap-counter">Recording…</div>
+      <div class="p-step-title" id="cap-title">Hold the position</div>
+    </div>
+    <div class="p-instruction-box">
+      <span id="cap-howto">—</span>
+    </div>
+    <div class="p-countdown" id="cap-countdown">10</div>
+    <div class="p-sub">seconds remaining</div>
+    <button id="btn-abort" class="p-big-btn p-btn-red">Stop / Cancel</button>
+  </div>
+
+  <!-- ============ SCREEN 4: TRANSFER ============ -->
+  <div id="screen-transfer" class="p-card hidden">
+    <div>
+      <div class="p-step-num">Saving capture</div>
+      <div class="p-step-title">Pulling data off the sensor…</div>
+      <div class="p-step-body" style="font-size:14px;">Keep the band near the phone. This takes a few seconds.</div>
+    </div>
+    <div class="p-countdown small" id="xfer-pct">0%</div>
+    <div class="bar-track"><div class="bar-fill" id="xfer-bar"></div></div>
+    <div class="p-sub" id="xfer-sub">receiving packets</div>
+  </div>
+
+  <!-- ============ SCREEN 5: REVIEW + UPLOAD ============ -->
+  <div id="screen-review" class="p-card hidden">
+    <div>
+      <div class="p-step-num">Done · Review</div>
+      <div class="p-step-title">Session complete</div>
+      <div class="p-step-body" style="font-size:14px;">
+        Here is what was captured. Confirm consent, then upload everything to the cloud.
+      </div>
+    </div>
+
+    <div class="seg-list" id="review-list"></div>
+
+    <div class="p-consent-box">
+      <label class="p-consent-label">
+        <input type="checkbox" id="consent-check" />
+        <span>The participant agrees to share this anonymous hand-motion recording for
+          research to improve tremor detection. No names or identifying information are stored.</span>
+      </label>
+    </div>
+
+    <button id="btn-upload" class="p-big-btn p-btn-green" disabled>Upload All to Cloud</button>
+    <button id="btn-redo" class="p-big-btn p-btn-grey">Redo a Task</button>
+    <button id="btn-new" class="p-big-btn p-btn-grey">New Participant</button>
+    <div class="hint" id="upload-hint">Tick the consent box to enable upload.</div>
+  </div>
+
+  <!-- ============ SETTINGS (collapsible, advanced) ============ -->
+  <div class="section-card">
+    <div class="section-title">
+      <span>Advanced</span>
+      <button class="settings-toggle" id="settings-toggle">show ▾</button>
+    </div>
+    <div class="settings-body" id="settings-body">
+      <div class="set-row">
+        <div class="set-label"><strong>Sample rate</strong>BMI270 output data rate. 400 Hz is the recommended default for tremor + movement.</div>
+        <select id="set-odr">
+          <option value="0">100 Hz</option>
+          <option value="1">200 Hz</option>
+          <option value="2" selected>400 Hz</option>
+          <option value="3">800 Hz</option>
+          <option value="4">1600 Hz</option>
+        </select>
+      </div>
+      <div class="set-row">
+        <div class="set-label"><strong>Accel range</strong>±8 g default — headroom for vigorous voluntary motion without clipping.</div>
+        <select id="set-acc">
+          <option value="0">±2 g</option>
+          <option value="1">±4 g</option>
+          <option value="2" selected>±8 g</option>
+          <option value="3">±16 g</option>
+        </select>
+      </div>
+      <div class="set-row">
+        <div class="set-label"><strong>Gyro range</strong>±2000 °/s default — captures fast rotational motion.</div>
+        <select id="set-gyr">
+          <option value="0" selected>±2000 °/s</option>
+          <option value="1">±1000 °/s</option>
+          <option value="2">±500 °/s</option>
+          <option value="3">±250 °/s</option>
+          <option value="4">±125 °/s</option>
+        </select>
+      </div>
+      <div class="set-note warn" id="rate-note"></div>
+
+      <div class="section-title" style="margin-top:18px;">Firebase</div>
+      <div class="set-note">Prefilled to the TremorPause project. Data goes to the <b>tremor_raw_v2</b> collection. Only change if you know what you're doing.</div>
+      <div class="fb-grid">
+        <label>Project ID</label><input type="text" id="fb-project" />
+        <label>API key</label><input type="text" id="fb-apikey" />
+        <label>App ID</label><input type="text" id="fb-appid" />
+      </div>
+      <div id="firebase-status" class="set-note" style="margin-top:8px;">Firebase: initializing…</div>
+
+      <div class="section-title" style="margin-top:18px;">Device</div>
+      <div class="set-row">
+        <div class="set-label"><strong>BLE name filter</strong>Must match the firmware's advertised name.</div>
+        <input type="text" id="set-name" value="TremorPause-DAQ" style="width:170px;" />
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    TremorPause Collect · Open via Bluefy on iOS · Deploy to GitHub Pages<br />
+    Web Bluetooth requires HTTPS and a Chromium-based browser (or Bluefy on iPhone/iPad).
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Firebase v9 compat -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

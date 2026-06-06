@@ -1,0 +1,10 @@
+{
+  "name": "TremorPause Collect",
+  "short_name": "TP Collect",
+  "description": "High-rate hand-motion data collection for the TremorPause research project.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#080b10",
+  "theme_color": "#00c2ff"
+}
